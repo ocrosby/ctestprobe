@@ -1,14 +1,17 @@
 CC = gcc
+AR = ar
 CFLAGS = -Wall -Wextra -g
 DEPS = # Add your header files here
-OBJ = # Add your object files here
-TARGET = ctestprobe
+OBJ = ctestprobe.o
+TARGET = libctestprobe.a
 
-%.o: %.c $(DEPS)
+all: $(TARGET)
+
+%.o: src/%.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(AR) rcs $@ $^
 
 .PHONY: clean
 
