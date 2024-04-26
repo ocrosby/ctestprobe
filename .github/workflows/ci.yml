@@ -30,7 +30,7 @@ jobs:
       - name: Package
         run: |
           make clean
-          tar -czvf package.tar.gz --exclude='*docs*' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='.gitignore' *
+          tar -czvf package.tar.gz --exclude='*docs*' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='.gitignore' --exclude='LICENSE' *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
