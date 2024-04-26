@@ -12,6 +12,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJ)
 	$(AR) rcs $@ $^
+	ls -la $(TARGET)
 
 .PHONY: clean
 
