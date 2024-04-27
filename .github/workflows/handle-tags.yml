@@ -13,6 +13,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      TAR_NAME: ''
+
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +38,7 @@ jobs:
           make clean
           TAG_NAME=${GITHUB_REF#refs/tags/}
           TAR_NAME="project-$TAG_NAME.tar.gz"
+          echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
           tar -czvf $TAR_NAME --exclude='*docs*' --exclude='.git' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='*homebrew*' --exclude='.gitignore' --exclude='LICENSE' *
 
       - name: Upload tarball to release
