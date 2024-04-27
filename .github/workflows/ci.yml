@@ -53,8 +53,16 @@ jobs:
           tarball_url = "https://github.com/#{repo}/archive/#{tag}.tar.gz"
           tarball_path = "#{tag}.tar.gz"
           
-          open(tarball_path, 'wb') do |file|
-            file << open(tarball_url).read
+          begin
+            open(tarball_url) do |source|
+              open(tarball_path, 'wb') do |file|
+                file.write(source.read)
+              end
+            end
+          rescue OpenURI::HTTPError => e
+            puts "Unable to download tarball from #{tarball_url}"
+            puts "Error: #{e.message}"
+            exit 1
           end
           
           release = client.releases(repo).find { |r| r.tag_name == tag }
