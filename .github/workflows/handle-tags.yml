@@ -33,8 +33,9 @@ jobs:
       - name: Create tarball
         run: |
           make clean
-          TAG_NAME=${{ github.ref }}.tar.gz
-          tar -czvf $TAG_NAME --exclude='*docs*' --exclude='.git' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='*homebrew*' --exclude='.gitignore' --exclude='LICENSE' *
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          TAR_NAME="project-$TAG_NAME.tar.gz"
+          tar -czvf $TAR_NAME --exclude='*docs*' --exclude='.git' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='*homebrew*' --exclude='.gitignore' --exclude='LICENSE' *
 
       - name: Upload tarball to release
         run: |
@@ -46,7 +47,7 @@ jobs:
           tag = "#{ENV['GITHUB_REF']}".split('/').last
 
           release = client.create_release(repo, tag, name: "Release #{tag}", draft: false)
-          client.upload_asset(release.url, $TAG_NAME, content_type: 'application/gzip')
+          client.upload_asset(release.url, $TAR_NAME, content_type: 'application/gzip')
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
