@@ -42,7 +42,7 @@ jobs:
           ruby <<EOF
           require 'octokit'
 
-          client = Octokit::Client.new(access_token: ENV['GITHUB_TOKEN'])
+          client = Octokit::Client.new(access_token: ENV['GH_PAT'])
           repo = "#{ENV['GITHUB_REPOSITORY']}"
           tag = "#{ENV['GITHUB_REF']}".split('/').last
 
@@ -50,4 +50,4 @@ jobs:
           client.upload_asset(release.url, "./#{ENV['TAR_NAME']}", content_type: 'application/gzip')
           EOF
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
