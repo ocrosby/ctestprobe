@@ -47,7 +47,7 @@ jobs:
           tag = "#{ENV['GITHUB_REF']}".split('/').last
 
           release = client.create_release(repo, tag, name: "Release #{tag}", draft: false)
-          client.upload_asset(release.url, $TAR_NAME, content_type: 'application/gzip')
+          client.upload_asset(release.url, "./#{ENV['TAR_NAME']}", content_type: 'application/gzip')
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
