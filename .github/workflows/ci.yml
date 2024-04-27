@@ -8,6 +8,7 @@ on:
 
 env:
   NODE_VERSION: 20.11.1
+  RUBY_VERSION: 3.0.2
 
 jobs:
   build:
@@ -24,7 +25,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 2.7
+          ruby-version: ${{ env.RUBY_VERSION }}
 
       - name: Install dependencies
         run: |
