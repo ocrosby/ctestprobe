@@ -1,0 +1,52 @@
+name: Handle Tags
+
+on:
+  create:
+    tags:
+      - '*'
+
+env:
+  NODE_VERSION: 20.11.1
+  RUBY_VERSION: 3.0.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          gem install octokit
+
+      - name: Create tarball
+        run: |
+          make clean
+          TAG_NAME=${{ github.ref }}.tar.gz
+          tar -czvf $TAG_NAME --exclude='*docs*' --exclude='.git' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='*homebrew*' --exclude='.gitignore' --exclude='LICENSE' *
+
+      - name: Upload tarball to release
+        run: |
+          ruby <<EOF
+          require 'octokit'
+
+          client = Octokit::Client.new(access_token: ENV['GITHUB_TOKEN'])
+          repo = "#{ENV['GITHUB_REPOSITORY']}"
+          tag = "#{ENV['GITHUB_REF']}".split('/').last
+
+          release = client.create_release(repo, tag, name: "Release #{tag}", draft: false)
+          client.upload_asset(release.url, $TAG_NAME, content_type: 'application/gzip')
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

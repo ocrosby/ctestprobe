@@ -8,7 +8,6 @@ on:
 
 env:
   NODE_VERSION: 20.11.1
-  RUBY_VERSION: 3.0.2
 
 jobs:
   build:
@@ -22,51 +21,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ env.RUBY_VERSION }}
-
       - name: Install dependencies
         run: |
           sudo apt-get install -y gcc make
-          gem install octokit
 
       - name: Build
         run: make
-
-      - name: Package
-        run: |
-          make clean
-          tar -czvf package.tar.gz --exclude='*docs*' --exclude='*.github*' --exclude='*examples*' --exclude='*tests*' --exclude='*homebrew*' --exclude='.gitignore' --exclude='LICENSE' *
-
-      - name: Download and upload tarball
-        run: |
-          ruby <<EOF
-          require 'octokit'
-          require 'open-uri'
-          
-          client = Octokit::Client.new(access_token: ENV['GITHUB_TOKEN'])
-          repo = "#{ENV['GITHUB_REPOSITORY']}"
-          tag = "#{ENV['GITHUB_REF']}".split('/').last
-          
-          tarball_url = "https://github.com/#{repo}/archive/#{tag}.tar.gz"
-          tarball_path = "#{tag}.tar.gz"
-          
-          begin
-            open(tarball_url) do |source|
-              open(tarball_path, 'wb') do |file|
-                file.write(source.read)
-              end
-            end
-          rescue OpenURI::HTTPError => e
-            puts "Unable to download tarball from #{tarball_url}"
-            puts "Error: #{e.message}"
-            exit 1
-          end
-          
-          release = client.releases(repo).find { |r| r.tag_name == tag }
-          client.upload_asset(release.url, tarball_path, content_type: 'application/gzip')
-          EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
