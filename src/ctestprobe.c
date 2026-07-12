@@ -15,6 +15,11 @@ void ctestprobe_init(void) {
 }
 
 void ctestprobe_register(const char *name, void (*test_func)(void)) {
+    if (test_func == NULL) {
+        fprintf(stderr, "ctestprobe: refusing to register %s: test_func is NULL\n",
+                name != NULL ? name : "(unnamed)");
+        return;
+    }
     if (g_num_tests >= CTP_MAX_TESTS) {
         fprintf(stderr, "ctestprobe: registry full (%d tests)\n",
                 CTP_MAX_TESTS);
@@ -72,4 +77,6 @@ void ctestprobe_fail(const char *file, int line, const char *fmt, ...) {
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);
+    /* Flush so the diagnostic survives an abnormal exit in a later test. */
+    fflush(stderr);
 }
