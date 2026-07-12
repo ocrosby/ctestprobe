@@ -51,18 +51,15 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          make clean
-          TAR_NAME="ctestprobe-${TAG}.tar.gz"
-          tar -czvf "$TAR_NAME" \
-            --exclude='*docs*' \
-            --exclude='.git' \
-            --exclude='*.github*' \
-            --exclude='*examples*' \
-            --exclude='*tests*' \
-            --exclude='*homebrew*' \
-            --exclude='.gitignore' \
-            --exclude='LICENSE' \
-            *
+          # git archive respects .gitattributes export-ignore for per-path
+          # exclusion and produces a versioned prefix directory so `tar -xzf`
+          # lands the source in ctestprobe-<ver>/ instead of splattering it.
+          VER="${TAG#v}"
+          TAR_NAME="ctestprobe-${VER}.tar.gz"
+          git archive --format=tar.gz \
+            --prefix="ctestprobe-${VER}/" \
+            -o "$TAR_NAME" \
+            "$TAG"
           echo "TAR_NAME=$TAR_NAME" >> "$GITHUB_ENV"
 
       - name: Attach tarball to release
