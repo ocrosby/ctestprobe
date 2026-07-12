@@ -22,6 +22,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Configure git identity
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
       - name: Run semantic-release
         uses: jedi-knights/go-semantic-release@44d82f5b1d93faa273eb9108f361280df9379dfd  # v0.10.2
         with:
