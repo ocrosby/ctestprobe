@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: ctestprobe
+Description: Minimal unit-testing framework for C
+URL: https://github.com/ocrosby/ctestprobe
+Version: @VERSION@
+Libs: -L${libdir} -lctestprobe
+Cflags: -I${includedir}
