@@ -1,6 +1,6 @@
 # ctestprobe
 
-A minimal unit-testing framework for C.
+A minimal unit-testing framework for C — with hooks, filters, fork isolation, and TAP output.
 
 ![CI](https://github.com/ocrosby/ctestprobe/actions/workflows/ci.yml/badge.svg)
 ![Release](https://github.com/ocrosby/ctestprobe/actions/workflows/release.yml/badge.svg)
@@ -15,29 +15,33 @@ A minimal unit-testing framework for C.
 - [Usage](#usage)
 - [Configuration](#configuration)
 - [Development](#development)
+- [Migration from v1](#migration-from-v1)
 - [Limits](#limits)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Overview
 
-Writing C after time in modern languages, I miss having a simple unit-testing harness. C has no reflection, so tests must be registered manually — but the resulting API can still be light and legible. `ctestprobe` is a small static library that provides just enough scaffolding: register tests, run them, get a summary.
-
-The project ships as a static library plus a header, and consumers link it into their own test binaries.
+C has no reflection, so tests must be registered manually — but the resulting API can still be light and legible. `ctestprobe` is a small static library that provides just enough scaffolding: register tests, run them, get a summary. Since v2 it also grew crash-safe fork isolation, TAP output for CI harnesses, and setup/teardown hooks — while keeping the header-plus-static-library shape.
 
 ## Features
 
-- Single static library (`libctestprobe.a`) and one header (`ctestprobe.h`)
-- Explicit test registration — no reflection, no macros to discover tests behind your back
-- Assertions for integers, C strings, and byte arrays, plus a raw boolean check
-- Per-test pass/fail tracking with a console summary reporter
-- Self-test binary shipped in the repo for verifying the library itself
+- Explicit test registration — no reflection, no macros discovering tests behind your back
+- Fatal `CTP_ASSERT_*` and non-fatal `CTP_EXPECT_*` variants, both routed through the same failure path
+- Assertions work from any call depth via `setjmp`/`longjmp` bailout — not only the top-level test function
+- Setup / teardown hooks, both global and per-test
+- Substring filter to run one test (via API, CLI flag, or env var)
+- Fork isolation: a crashing test reports as FAIL instead of aborting the runner (POSIX)
+- Per-test timing populated via `clock_gettime(CLOCK_MONOTONIC)`
+- TAP version 14 output for CI parsers
+- Colored console output on a tty; opt out via `--no-color` or `NO_COLOR=1`
+- Dynamic registry — no compile-time test cap
 
 ## Requirements
 
 - A C11-capable compiler (`cc`, `clang`, or `gcc`)
-- `make`
-- `ar` (from binutils or your platform toolchain)
+- `make` and `ar` (POSIX toolchain)
+- POSIX runtime (`fork`, `waitpid`, `clock_gettime`, `isatty`) — required for `--fork` and timing
 
 ## Installation
 
@@ -60,7 +64,7 @@ To consume the library from another project, add `-I<path-to-ctestprobe>/include
 
 ## Usage
 
-Write a test file that registers each test and calls the runner:
+Write a test file that registers each test and delegates `main` to the framework's CLI entry point:
 
 ```c
 #include "ctestprobe.h"
@@ -73,42 +77,81 @@ static void test_strings(void) {
     CTP_ASSERT_EQ_STR("hello", "hello");
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     ctestprobe_init();
     ctestprobe_register("addition", test_addition);
     ctestprobe_register("strings",  test_strings);
-    int failed = ctestprobe_run_all();
-    ctestprobe_console_report();
-    return failed == 0 ? 0 : 1;
+    return ctestprobe_main(argc, argv);
 }
 ```
 
-### Registration and running
+The binary then accepts flags:
 
-- `void ctestprobe_init(void)` — reset the internal registry.
-- `void ctestprobe_register(const char *name, void (*fn)(void))` — register a test. `name` must outlive the run.
-- `void ctestprobe_run_test(Test *t)` — run one test in place, updating its status. Rarely called directly; use `ctestprobe_run_all` instead.
-- `int  ctestprobe_run_all(void)` — run every registered test and return the number that failed.
-- `void ctestprobe_console_report(void)` — print a per-test summary to stdout.
+```bash
+./mytests                    # run all, console report
+./mytests --list             # list registered test names, exit 0
+./mytests --filter=addition  # run only tests whose name contains "addition"
+./mytests --tap              # emit TAP version 14 output instead
+./mytests --fork             # run each test in a forked process (crash-safe)
+./mytests --no-color         # disable ANSI color
+./mytests --help             # full usage
+```
 
-### Assertions
+### Assertion macros
 
-Each assertion, on failure, marks the currently-running test `FAILED`, prints `FAIL <file>:<line>: <detail>` to stderr, and returns from the test function. Because they use `return`, they can only be called inside a `void`-returning test.
+Fatal assertions (bail out of the current test via `longjmp`):
 
-- `CTP_ASSERT(cond)` — fail if `cond` is falsy.
-- `CTP_ASSERT_EQ_INT(got, want)` — integer equality (widened to `long long`).
-- `CTP_ASSERT_EQ_STR(got, want)` — C-string equality via `strcmp`.
-- `CTP_ASSERT_EQ_BYTES(got, got_len, want, want_len)` — length + content equality on byte arrays.
+- `CTP_ASSERT(cond)` — fail if `cond` is falsy
+- `CTP_ASSERT_TRUE(cond)` / `CTP_ASSERT_FALSE(cond)`
+- `CTP_ASSERT_NULL(ptr)` / `CTP_ASSERT_NOT_NULL(ptr)`
+- `CTP_ASSERT_EQ_INT(got, want)` — integer equality (widened to `long long`)
+- `CTP_ASSERT_EQ_STR(got, want)` — C-string equality via `strcmp`
+- `CTP_ASSERT_STR_CONTAINS(haystack, needle)` — `strstr` check
+- `CTP_ASSERT_EQ_DOUBLE(got, want, epsilon)` — absolute-error comparison
+- `CTP_ASSERT_EQ_BYTES(got, got_len, want, want_len)` — length + content equality on byte arrays
+
+Non-fatal expectations (record the failure but keep running the test):
+
+- `CTP_EXPECT(cond)`
+- `CTP_EXPECT_EQ_INT(got, want)`
+- `CTP_EXPECT_EQ_STR(got, want)`
+
+Both families print `FAIL <file>:<line>: <detail>` (or `EXPECT ...`) to `stderr` and mark the current test as `CTP_FAILED`.
+
+### Setup / teardown hooks
+
+```c
+static void global_setup(void *ud)    { /* once before any test */ }
+static void global_teardown(void *ud) { /* once after all tests */ }
+static void each_setup(void *ud)      { /* before every test */ }
+static void each_teardown(void *ud)   { /* after every test (pass or fail) */ }
+
+ctestprobe_set_global_setup(global_setup, my_user_data);
+ctestprobe_set_each_setup(each_setup, my_user_data);
+/* ... */
+```
+
+### Fork isolation
+
+`--fork` (or `ctestprobe_set_fork_isolation(1)` / `CTP_FORK_TESTS=1`) runs each test in a `fork()`ed child. If the child dies from a signal (segfault, abort, timeout kill), the parent reports it as `FAIL` with the signal name and continues to the next test. Per-test timing is measured in the parent, so fork overhead shows up in the reported wall-clock.
 
 ## Configuration
 
-`ctestprobe` has no runtime configuration. Compile-time behavior is controlled through the `Makefile`:
+Configuration is via CLI flags and environment variables — there is no config file.
+
+| Setting          | Flag              | Env var               | Default          |
+|------------------|-------------------|-----------------------|------------------|
+| Substring filter | `--filter=SUBSTR` | `CTP_FILTER`          | (all tests)      |
+| Fork isolation   | `--fork`          | `CTP_FORK_TESTS=1`    | off              |
+| Colored console  | `--no-color` to disable | `NO_COLOR=1`    | auto (tty check) |
+| TAP output       | `--tap`           | —                     | console report   |
+| List only        | `--list`          | —                     | run              |
+
+Compile-time behavior is controlled via the Makefile:
 
 - `CC` — C compiler (default: `cc`)
 - `CFLAGS` — compile flags (default: `-std=c11 -Wall -Wextra -Wpedantic -O2 -g`)
 - `AR` — archiver (default: `ar`)
-
-Override by exporting or passing on the make command line, e.g. `make CC=clang`.
 
 ## Development
 
@@ -123,20 +166,53 @@ make clean    # remove build artifacts
 
 ### Releases
 
-Releases are automated. A push to `main` runs the [`Release` workflow](.github/workflows/release.yml), which uses [`jedi-knights/go-semantic-release`](https://github.com/jedi-knights/go-semantic-release) to analyze [Conventional Commits](https://www.conventionalcommits.org/) since the last tag, cut the next semantic version, and publish a GitHub Release. The workflow then attaches a source tarball (`ctestprobe-vX.Y.Z.tar.gz`) as a release asset.
+Releases are automated. A push to `main` runs the [`Release` workflow](.github/workflows/release.yml), which uses [`jedi-knights/go-semantic-release`](https://github.com/jedi-knights/go-semantic-release) to analyze [Conventional Commits](https://www.conventionalcommits.org/) since the last tag, cut the next semantic version, publish a GitHub Release, and attach a source tarball (`ctestprobe-<ver>.tar.gz`) as a release asset. The tarball is produced by `git archive` and expands into a versioned prefix directory `ctestprobe-<ver>/`.
 
-Commit messages must follow Conventional Commits (`feat:`, `fix:`, `chore:`, …) — the release type is derived from them:
+Commit types map to release types:
 
 - `feat:` → minor bump
 - `fix:` → patch bump
 - Any commit with a `!` or a `BREAKING CHANGE:` footer → major bump
 
+## Migration from v1
+
+v2.0.0 renamed the public types and enum members to prefixed identifiers so they don't collide with typical consumer code (`Test`, `FAILED`, etc. are extremely common names in test files).
+
+| v1                       | v2                           |
+|--------------------------|------------------------------|
+| `Test`                   | `ctp_test_t`                 |
+| `TestStatus`             | `ctp_test_status_t`          |
+| `NOT_RUN`                | `CTP_NOT_RUN`                |
+| `PASSED`                 | `CTP_PASSED`                 |
+| `FAILED`                 | `CTP_FAILED`                 |
+| (n/a)                    | `CTP_SKIPPED` (filtered out) |
+| `Test.name` (`char *`)   | `ctp_test_t.name` (`const char *`) |
+
+Bulk sed for consumer code:
+
+```bash
+sed -i.bak \
+  -e 's/\bTest\b/ctp_test_t/g' \
+  -e 's/\bTestStatus\b/ctp_test_status_t/g' \
+  -e 's/\bNOT_RUN\b/CTP_NOT_RUN/g' \
+  -e 's/\bPASSED\b/CTP_PASSED/g' \
+  -e 's/\bFAILED\b/CTP_FAILED/g' \
+  path/to/tests/*.c
+```
+
+Behavioral changes:
+
+- `CTP_ASSERT_*` macros now use `setjmp`/`longjmp` for bailout — they work at any call depth, not only inside the top-level test function. `ctestprobe_fail` `abort()`s if called outside a running test frame (previously silently ignored).
+- The 256-test compile-time cap is gone; the registry grows via `realloc`.
+- `Test.execution_time` is now populated (via `CLOCK_MONOTONIC`); before it was a reserved field with a permanent zero value.
+- `main` can now delegate to `ctestprobe_main(argc, argv)` for a full CLI (filter, list, TAP, fork, help). The old `ctestprobe_run_all` + `ctestprobe_console_report` idiom still works.
+
 ## Limits
 
-- Fixed registry of 256 tests per binary (compile-time constant).
-- No setup / teardown callbacks — do that inline in the test.
-- No parallelism, no fork isolation — a crashing test kills the runner.
-- No timing — `Test.execution_time` is reserved but currently unused.
+- No parallelism — tests run sequentially. Fork isolation runs each test in its own process but they still run one at a time.
+- No timeout per test — a hanging test hangs the runner unless you enable `--fork` and manage it with your own supervisor.
+- `--fork` is POSIX-only; on Windows the flag has no effect (nothing to fork with).
+- Registry ordering is FIFO. There is no dependency graph or explicit ordering annotation.
 
 ## Contributing
 
