@@ -45,22 +45,70 @@ C has no reflection, so tests must be registered manually — but the resulting 
 
 ## Installation
 
-Clone and build the static library:
+Three consumption paths — pick whichever fits your build system.
+
+### Path 1: single-header drop-in (recommended for small projects)
+
+Grab `ctestprobe.h` from the [latest release](https://github.com/ocrosby/ctestprobe/releases/latest) and drop it into your source tree. Then, in exactly one translation unit:
+
+```c
+#define CTP_IMPLEMENTATION
+#include "ctestprobe.h"
+```
+
+In every other translation unit that uses assertions, just:
+
+```c
+#include "ctestprobe.h"
+```
+
+No library to build, no linker flags to add.
+
+### Path 2: static library via Make
 
 ```bash
 git clone https://github.com/ocrosby/ctestprobe.git
 cd ctestprobe
 make
+sudo make install PREFIX=/usr/local   # or PREFIX=$HOME/.local, etc.
 ```
 
-Artifacts land in `build/`:
+Installs `libctestprobe.a` to `$(PREFIX)/lib/`, `ctestprobe.h` to `$(PREFIX)/include/`, and `ctestprobe.pc` to `$(PREFIX)/lib/pkgconfig/`. Consume via pkg-config:
+
+```bash
+cc mytests.c $(pkg-config --cflags --libs ctestprobe) -o mytests
+```
+
+To uninstall: `sudo make uninstall PREFIX=/usr/local`.
+
+### Path 3: CMake (in-tree or find_package)
+
+In-tree (as a submodule or FetchContent):
+
+```cmake
+add_subdirectory(third_party/ctestprobe)
+target_link_libraries(mytests PRIVATE ctestprobe::ctestprobe)
+```
+
+Installed:
+
+```cmake
+find_package(ctestprobe REQUIRED)
+target_link_libraries(mytests PRIVATE ctestprobe::ctestprobe)
+```
+
+### Homebrew
+
+A tap formula lives in [`packaging/homebrew/ctestprobe.rb`](packaging/homebrew/ctestprobe.rb) as a template. Once published to a `homebrew-ctestprobe` tap, install with `brew install ocrosby/ctestprobe/ctestprobe`.
+
+### Build artifacts (repo layout)
 
 - `build/libctestprobe.a` — the static library
 - `build/ctestprobe.o` — the object file
+- `build/ctestprobe.pc` — generated pkg-config metadata
 - `build/test_ctestprobe` — self-test binary
 - `build/example1` — example binary
-
-To consume the library from another project, add `-I<path-to-ctestprobe>/include` to your compile flags and link against `build/libctestprobe.a`.
+- `single_include/ctestprobe.h` — generated single-header (via `make single-header`)
 
 ## Usage
 
@@ -158,10 +206,24 @@ Compile-time behavior is controlled via the Makefile:
 Available make targets:
 
 ```bash
-make          # build library, self-test, and example
-make test     # run the self-test binary
-make example  # build and run the example
-make clean    # remove build artifacts
+make               # build library, self-test, example, and pkg-config
+make test          # run the self-test binary
+make example       # build and run the example
+make asan          # rebuild whole tree with -fsanitize=address,undefined and run self-test
+make ubsan         # same, -fsanitize=undefined
+make tsan          # same, -fsanitize=thread
+make single-header # generate single_include/ctestprobe.h
+make install       # install lib, header, and pkg-config to PREFIX (default /usr/local)
+make uninstall
+make clean
+```
+
+CMake:
+
+```bash
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 ### Releases
@@ -216,7 +278,7 @@ Behavioral changes:
 
 ## Contributing
 
-Issues and pull requests are welcome at [github.com/ocrosby/ctestprobe](https://github.com/ocrosby/ctestprobe). Commits on `main` must follow the [Conventional Commits](https://www.conventionalcommits.org/) format so that semantic-release can compute the next version correctly.
+Issues and pull requests are welcome at [github.com/ocrosby/ctestprobe](https://github.com/ocrosby/ctestprobe). See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch / commit / self-test discipline.
 
 ## License
 
