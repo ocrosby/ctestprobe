@@ -62,8 +62,16 @@ jobs:
             "$TAG"
           echo "TAR_NAME=$TAR_NAME" >> "$GITHUB_ENV"
 
-      - name: Attach tarball to release
+      - name: Build single-header amalgamation
+        if: steps.tag.outputs.tag != ''
+        run: make single-header
+
+      - name: Attach source tarball and single-header to release
         if: steps.tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ steps.tag.outputs.tag }}" "$TAR_NAME" --clobber
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+              "$TAR_NAME" \
+              single_include/ctestprobe.h \
+              --clobber

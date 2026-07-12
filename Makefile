@@ -28,7 +28,7 @@ SELF_TEST_BIN := $(BUILD)/test_ctestprobe
 EXAMPLE_SRC := examples/example1.c
 EXAMPLE_BIN := $(BUILD)/example1
 
-.PHONY: all lib test example clean install uninstall pkgconfig asan ubsan tsan
+.PHONY: all lib test example clean install uninstall pkgconfig asan ubsan tsan single-header
 
 all: $(LIB) $(SELF_TEST_BIN) $(EXAMPLE_BIN) $(PC)
 
@@ -98,5 +98,11 @@ tsan:
 	    CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=thread -fno-omit-frame-pointer" \
 	    LDFLAGS="-fsanitize=thread"
 
+# Single-header (stb-style) amalgamation for drop-in consumers.
+single-header: single_include/ctestprobe.h
+
+single_include/ctestprobe.h: include/ctestprobe.h src/ctestprobe.c scripts/amalgamate.sh
+	scripts/amalgamate.sh $@
+
 clean:
-	rm -rf $(BUILD) ctestprobe.o libctestprobe.a
+	rm -rf $(BUILD) single_include ctestprobe.o libctestprobe.a
