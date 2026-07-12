@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 #define CTESTPROBE_VERSION_MAJOR 2
-#define CTESTPROBE_VERSION_MINOR 0
+#define CTESTPROBE_VERSION_MINOR 2
 #define CTESTPROBE_VERSION_PATCH 0
 
 /*
@@ -89,6 +89,14 @@ void ctestprobe_set_filter(const char *substring);
  * as FAIL instead of aborting the runner. POSIX only. */
 void ctestprobe_set_fork_isolation(int enable);
 
+/* Set the name used in the JUnit XML report — both the
+ * <testsuite name="..."> element and every <testcase classname="...">
+ * attribute. NULL or "" resets to the default "ctestprobe". The pointer
+ * must outlive ctestprobe_junit_report; passing a string literal is
+ * typical. Useful when a single CI job aggregates JUnit XML from
+ * multiple binaries whose test names would otherwise collide. */
+void ctestprobe_set_suite_name(const char *name);
+
 /* -------- Runners -------- */
 
 /* Run one test in place. Rarely called directly; use ctestprobe_run_all
@@ -113,6 +121,8 @@ void ctestprobe_junit_report(FILE *fp);
  *   --list                 Print registered test names and exit 0
  *   --filter=SUBSTR        Run only tests whose name contains SUBSTR
  *   --tap                  Emit TAP output instead of the console report
+ *   --junit=PATH           Write JUnit XML (Surefire dialect) to PATH
+ *   --suite=NAME           Set the JUnit suite name (default: ctestprobe)
  *   --fork                 Fork each test (POSIX; crash-safe)
  *   --no-color             Disable ANSI color in the console report
  *   -h, --help             Show usage
@@ -120,6 +130,8 @@ void ctestprobe_junit_report(FILE *fp);
  * Recognized environment variables:
  *   CTP_FILTER=SUBSTR
  *   CTP_FORK_TESTS=1
+ *   CTP_JUNIT=PATH
+ *   CTP_SUITE=NAME
  *   NO_COLOR=1
  *
  * Returns 0 if all tests passed, 1 if any failed, 2 on argv error.

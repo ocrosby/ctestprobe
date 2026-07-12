@@ -229,9 +229,60 @@ int main(void) {
         printf("[OK] %-30s JUnit XML output\n", "junit");
     }
 
+    /* Suite name: verify default, custom setter, and NULL/"" reset — each
+     * by emitting XML into a tmpfile and grepping for the expected
+     * <testsuite name="..."> and classname="..." tokens. */
+    int suite_ok = 1;
+    struct { const char *setter; const char *expect; } suite_probes[] = {
+        { NULL,            "ctestprobe" },  /* default */
+        { "compression",   "compression" }, /* explicit */
+        { "",              "ctestprobe" },  /* empty resets to default */
+    };
+    for (size_t s = 0; s < sizeof suite_probes / sizeof suite_probes[0]; s++) {
+        ctestprobe_init();
+        ctestprobe_register("suite_probe", hk_test);
+        (void)ctestprobe_run_all();
+        if (s == 0) {
+            /* Skip explicit set: default path. */
+        } else if (suite_probes[s].setter == NULL) {
+            ctestprobe_set_suite_name(NULL);
+        } else {
+            ctestprobe_set_suite_name(suite_probes[s].setter);
+        }
+
+        FILE *sfp = tmpfile();
+        if (sfp == NULL) { suite_ok = 0; continue; }
+        ctestprobe_junit_report(sfp);
+        long slen = ftell(sfp);
+        rewind(sfp);
+        char *sbuf = (char *)malloc((size_t)slen + 1);
+        if (sbuf == NULL) { fclose(sfp); suite_ok = 0; continue; }
+        size_t sr = fread(sbuf, 1, (size_t)slen, sfp);
+        sbuf[sr] = '\0';
+        fclose(sfp);
+
+        char needle_suite[64];
+        char needle_class[64];
+        snprintf(needle_suite, sizeof needle_suite,
+                 "<testsuite name=\"%s\"", suite_probes[s].expect);
+        snprintf(needle_class, sizeof needle_class,
+                 "classname=\"%s\"", suite_probes[s].expect);
+        if (strstr(sbuf, needle_suite) == NULL ||
+            strstr(sbuf, needle_class) == NULL) {
+            suite_ok = 0;
+        }
+        free(sbuf);
+    }
+    if (!suite_ok) {
+        mismatched++;
+        printf("[MISMATCH] %-30s suite name setter\n", "suite_name");
+    } else {
+        printf("[OK] %-30s suite name setter\n", "suite_name");
+    }
+
     ctestprobe_free();
 
     printf("\nctestprobe self-test: %zu case(s), %d mismatched\n",
-           n + 2, mismatched);
+           n + 4, mismatched);
     return mismatched == 0 ? 0 : 1;
 }

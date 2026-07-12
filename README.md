@@ -141,6 +141,7 @@ The binary then accepts flags:
 ./mytests --filter=addition        # run only tests whose name contains "addition"
 ./mytests --tap                    # emit TAP version 14 output instead
 ./mytests --junit=results.xml      # also write JUnit XML for a CI parser
+./mytests --suite=mycomponent      # JUnit suite/classname (default: ctestprobe)
 ./mytests --fork                   # run each test in a forked process (crash-safe)
 ./mytests --no-color               # disable ANSI color
 ./mytests --help                   # full usage
@@ -184,6 +185,18 @@ ctestprobe_set_each_setup(each_setup, my_user_data);
 
 `--fork` (or `ctestprobe_set_fork_isolation(1)` / `CTP_FORK_TESTS=1`) runs each test in a `fork()`ed child. If the child dies from a signal (segfault, abort, timeout kill), the parent reports it as `FAIL` with the signal name and continues to the next test. Per-test timing is measured in the parent, so fork overhead shows up in the reported wall-clock.
 
+### JUnit suite name
+
+By default the JUnit XML report labels every test with `<testsuite name="ctestprobe">` and `classname="ctestprobe"`. Aggregators such as `EnricoMi/publish-unit-test-result-action` deduplicate tests by `(classname, name)` across input files, so when one CI job publishes JUnit output from several ctestprobe binaries whose test names collide (`test_empty`, `test_round_trip`, …), the counts silently collapse.
+
+Set a per-binary suite name to disambiguate — any of:
+
+- `--suite=NAME` on the CLI
+- `CTP_SUITE=NAME` env var
+- `ctestprobe_set_suite_name("NAME")` from C code
+
+The value is applied to both `<testsuite name="…">` and each `<testcase classname="…">`. `NULL` or an empty string resets to the default `ctestprobe`.
+
 ## Configuration
 
 Configuration is via CLI flags and environment variables — there is no config file.
@@ -195,6 +208,7 @@ Configuration is via CLI flags and environment variables — there is no config 
 | Colored console  | `--no-color` to disable | `NO_COLOR=1`    | auto (tty check) |
 | TAP output       | `--tap`           | —                     | console report   |
 | JUnit XML output | `--junit=PATH`    | `CTP_JUNIT=PATH`      | off              |
+| JUnit suite name | `--suite=NAME`    | `CTP_SUITE=NAME`      | `ctestprobe`     |
 | List only        | `--list`          | —                     | run              |
 
 `--junit=PATH` is additive: it writes the XML to `PATH` and still emits the console (or TAP) report to stdout, so GitHub Actions can render the test-summary widget from the XML while a human reads the console output.

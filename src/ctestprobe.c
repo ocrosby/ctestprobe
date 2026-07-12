@@ -35,9 +35,10 @@ static ctp_hook_t g_each_teardown    = NULL; static void *g_each_teardown_ud  = 
 
 /* -------- Runner state -------- */
 
-static const char *g_filter = NULL;
-static int         g_fork   = 0;
-static int         g_color  = -1;   /* -1 auto, 0 off, 1 forced on */
+static const char *g_filter     = NULL;
+static int         g_fork       = 0;
+static int         g_color      = -1;   /* -1 auto, 0 off, 1 forced on */
+static const char *g_suite_name = NULL;  /* NULL => "ctestprobe" */
 
 /* -------- Lifecycle -------- */
 
@@ -48,10 +49,11 @@ void ctestprobe_init(void) {
     g_global_teardown = NULL; g_global_teardown_ud = NULL;
     g_each_setup      = NULL; g_each_setup_ud      = NULL;
     g_each_teardown   = NULL; g_each_teardown_ud   = NULL;
-    g_filter = NULL;
-    g_fork   = 0;
-    g_color  = -1;
-    g_jmp_valid = 0;
+    g_filter     = NULL;
+    g_fork       = 0;
+    g_color      = -1;
+    g_suite_name = NULL;
+    g_jmp_valid  = 0;
 }
 
 void ctestprobe_free(void) {
@@ -96,6 +98,10 @@ void ctestprobe_set_each_teardown(ctp_hook_t h, void *ud)   { g_each_teardown   
 void ctestprobe_set_filter(const char *substring) { g_filter = substring; }
 void ctestprobe_set_fork_isolation(int enable)    { g_fork   = enable; }
 
+void ctestprobe_set_suite_name(const char *name) {
+    g_suite_name = (name != NULL && name[0] != '\0') ? name : NULL;
+}
+
 /* -------- Helpers -------- */
 
 static double now_seconds(void) {
@@ -107,6 +113,10 @@ static double now_seconds(void) {
 static int matches_filter(const char *name) {
     if (g_filter == NULL || g_filter[0] == '\0') return 1;
     return strstr(name, g_filter) != NULL;
+}
+
+static const char *suite_name(void) {
+    return g_suite_name != NULL ? g_suite_name : "ctestprobe";
 }
 
 static int color_enabled(FILE *fp) {
@@ -271,18 +281,22 @@ void ctestprobe_junit_report(FILE *fp) {
         }
     }
     fprintf(fp, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    const char *suite = suite_name();
     fprintf(fp,
         "<testsuites tests=\"%zu\" failures=\"%d\" time=\"%.3f\">\n",
         g_num, failed, total);
+    fputs("  <testsuite name=\"", fp);
+    xml_escape(fp, suite);
     fprintf(fp,
-        "  <testsuite name=\"ctestprobe\" tests=\"%zu\" failures=\"%d\" skipped=\"%d\" time=\"%.3f\">\n",
+        "\" tests=\"%zu\" failures=\"%d\" skipped=\"%d\" time=\"%.3f\">\n",
         g_num, failed, skipped, total);
     for (size_t i = 0; i < g_num; i++) {
         const ctp_test_t *t = &g_tests[i];
         fputs("    <testcase name=\"", fp);
         xml_escape(fp, t->name);
-        fprintf(fp, "\" classname=\"ctestprobe\" time=\"%.3f\"",
-                t->execution_time);
+        fputs("\" classname=\"", fp);
+        xml_escape(fp, suite);
+        fprintf(fp, "\" time=\"%.3f\"", t->execution_time);
         if (t->status == CTP_FAILED) {
             fputs(">\n      <failure message=\"", fp);
             xml_escape(fp,
@@ -357,6 +371,7 @@ static void print_help(FILE *fp, const char *prog) {
         "  --tap                  Emit TAP output instead of the console report\n"
         "  --junit=PATH           Write JUnit XML (Surefire dialect) to PATH\n"
         "                         (does not suppress the console/TAP report)\n"
+        "  --suite=NAME           Set the JUnit suite name (default: ctestprobe)\n"
         "  --fork                 Run each test in a forked process (crash-safe)\n"
         "  --no-color             Disable ANSI color in the console report\n"
         "  -h, --help             Show this message\n"
@@ -365,6 +380,7 @@ static void print_help(FILE *fp, const char *prog) {
         "  CTP_FILTER=SUBSTR      Equivalent to --filter\n"
         "  CTP_FORK_TESTS=1       Equivalent to --fork\n"
         "  CTP_JUNIT=PATH         Equivalent to --junit\n"
+        "  CTP_SUITE=NAME         Equivalent to --suite\n"
         "  NO_COLOR=1             Equivalent to --no-color\n",
         prog);
 }
@@ -380,6 +396,8 @@ int ctestprobe_main(int argc, char **argv) {
     if (getenv("CTP_FORK_TESTS") != NULL) g_fork = 1;
     const char *env_junit = getenv("CTP_JUNIT");
     if (env_junit != NULL && env_junit[0] != '\0') junit_path = env_junit;
+    const char *env_suite = getenv("CTP_SUITE");
+    if (env_suite != NULL && env_suite[0] != '\0') ctestprobe_set_suite_name(env_suite);
 
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -391,6 +409,8 @@ int ctestprobe_main(int argc, char **argv) {
         else if (strcmp(arg, "--filter") == 0 && i + 1 < argc) { g_filter = argv[++i]; }
         else if (strncmp(arg, "--junit=", 8) == 0) { junit_path = arg + 8; }
         else if (strcmp(arg, "--junit") == 0 && i + 1 < argc) { junit_path = argv[++i]; }
+        else if (strncmp(arg, "--suite=", 8) == 0) { ctestprobe_set_suite_name(arg + 8); }
+        else if (strcmp(arg, "--suite") == 0 && i + 1 < argc) { ctestprobe_set_suite_name(argv[++i]); }
         else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
             print_help(stdout, argv[0]);
             return 0;
