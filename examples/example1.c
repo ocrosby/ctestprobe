@@ -14,12 +14,16 @@ static void test_bytes_compare(void) {
     CTP_ASSERT_EQ_BYTES(a, sizeof a, b, sizeof b);
 }
 
-int main(void) {
+static void test_pointer_not_null(void) {
+    int x = 0;
+    CTP_ASSERT_NOT_NULL(&x);
+}
+
+int main(int argc, char **argv) {
     ctestprobe_init();
-    ctestprobe_register("addition works", test_addition_works);
-    ctestprobe_register("string compare", test_string_compare);
-    ctestprobe_register("bytes compare",  test_bytes_compare);
-    int failed = ctestprobe_run_all();
-    ctestprobe_console_report();
-    return failed == 0 ? 0 : 1;
+    ctestprobe_register("addition works",  test_addition_works);
+    ctestprobe_register("string compare",  test_string_compare);
+    ctestprobe_register("bytes compare",   test_bytes_compare);
+    ctestprobe_register("pointer not NULL", test_pointer_not_null);
+    return ctestprobe_main(argc, argv);
 }
