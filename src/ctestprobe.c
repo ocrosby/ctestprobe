@@ -234,12 +234,93 @@ void ctestprobe_tap_report(void) {
     }
 }
 
+/* -------- JUnit XML (Surefire dialect) -------- */
+
+static void xml_escape(FILE *fp, const char *s) {
+    if (s == NULL) { fputs("(null)", fp); return; }
+    for (; *s; s++) {
+        switch (*s) {
+        case '<':  fputs("&lt;",   fp); break;
+        case '>':  fputs("&gt;",   fp); break;
+        case '&':  fputs("&amp;",  fp); break;
+        case '"':  fputs("&quot;", fp); break;
+        case '\'': fputs("&apos;", fp); break;
+        default:
+            /* Strip control chars except tab/newline/carriage-return; XML 1.0
+             * doesn't permit them and downstream parsers will reject the doc. */
+            if ((unsigned char)*s < 0x20 && *s != '\t' && *s != '\n' && *s != '\r') {
+                fputc('?', fp);
+            } else {
+                fputc(*s, fp);
+            }
+            break;
+        }
+    }
+}
+
+void ctestprobe_junit_report(FILE *fp) {
+    int passed = 0, failed = 0, skipped = 0;
+    double total = 0.0;
+    for (size_t i = 0; i < g_num; i++) {
+        total += g_tests[i].execution_time;
+        switch (g_tests[i].status) {
+        case CTP_PASSED:  passed++;  break;
+        case CTP_FAILED:  failed++;  break;
+        case CTP_SKIPPED: skipped++; break;
+        default: break;
+        }
+    }
+    fprintf(fp, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    fprintf(fp,
+        "<testsuites tests=\"%zu\" failures=\"%d\" time=\"%.3f\">\n",
+        g_num, failed, total);
+    fprintf(fp,
+        "  <testsuite name=\"ctestprobe\" tests=\"%zu\" failures=\"%d\" skipped=\"%d\" time=\"%.3f\">\n",
+        g_num, failed, skipped, total);
+    for (size_t i = 0; i < g_num; i++) {
+        const ctp_test_t *t = &g_tests[i];
+        fputs("    <testcase name=\"", fp);
+        xml_escape(fp, t->name);
+        fprintf(fp, "\" classname=\"ctestprobe\" time=\"%.3f\"",
+                t->execution_time);
+        if (t->status == CTP_FAILED) {
+            fputs(">\n      <failure message=\"", fp);
+            xml_escape(fp,
+                       t->last_failure_msg[0] != '\0'
+                           ? t->last_failure_msg
+                           : "test failed");
+            fputs("\" type=\"assertion\"/>\n    </testcase>\n", fp);
+        } else if (t->status == CTP_SKIPPED) {
+            fputs(">\n      <skipped/>\n    </testcase>\n", fp);
+        } else {
+            fputs("/>\n", fp);
+        }
+    }
+    fputs("  </testsuite>\n", fp);
+    fputs("</testsuites>\n", fp);
+    (void)passed;  /* summary already in the testsuite attrs */
+}
+
 /* -------- Failure hooks -------- */
+
+/* Snapshot the formatted message into g_current->last_failure_msg so
+ * ctestprobe_junit_report can surface it later. Uses va_copy so the same
+ * va_list can still be consumed for the stderr write. */
+static void snapshot_failure(const char *fmt, va_list ap) {
+    if (g_current == NULL) return;
+    va_list ap2;
+    va_copy(ap2, ap);
+    (void)vsnprintf(g_current->last_failure_msg,
+                    sizeof g_current->last_failure_msg,
+                    fmt, ap2);
+    va_end(ap2);
+}
 
 void ctestprobe_fail(const char *file, int line, const char *fmt, ...) {
     if (g_current != NULL) g_current->status = CTP_FAILED;
     va_list ap;
     va_start(ap, fmt);
+    snapshot_failure(fmt, ap);
     fprintf(stderr, "FAIL %s:%d: ", file, line);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
@@ -255,6 +336,7 @@ void ctestprobe_expect_fail(const char *file, int line, const char *fmt, ...) {
     if (g_current != NULL) g_current->status = CTP_FAILED;
     va_list ap;
     va_start(ap, fmt);
+    snapshot_failure(fmt, ap);
     fprintf(stderr, "EXPECT %s:%d: ", file, line);
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
@@ -273,6 +355,8 @@ static void print_help(FILE *fp, const char *prog) {
         "  --list                 List registered tests and exit\n"
         "  --filter=SUBSTR        Run only tests whose name contains SUBSTR\n"
         "  --tap                  Emit TAP output instead of the console report\n"
+        "  --junit=PATH           Write JUnit XML (Surefire dialect) to PATH\n"
+        "                         (does not suppress the console/TAP report)\n"
         "  --fork                 Run each test in a forked process (crash-safe)\n"
         "  --no-color             Disable ANSI color in the console report\n"
         "  -h, --help             Show this message\n"
@@ -280,6 +364,7 @@ static void print_help(FILE *fp, const char *prog) {
         "Environment:\n"
         "  CTP_FILTER=SUBSTR      Equivalent to --filter\n"
         "  CTP_FORK_TESTS=1       Equivalent to --fork\n"
+        "  CTP_JUNIT=PATH         Equivalent to --junit\n"
         "  NO_COLOR=1             Equivalent to --no-color\n",
         prog);
 }
@@ -287,11 +372,14 @@ static void print_help(FILE *fp, const char *prog) {
 int ctestprobe_main(int argc, char **argv) {
     int use_tap = 0;
     int list_only = 0;
+    const char *junit_path = NULL;
 
     /* Environment-derived defaults (overridden by flags below). */
     const char *env_filter = getenv("CTP_FILTER");
     if (env_filter != NULL && env_filter[0] != '\0') g_filter = env_filter;
     if (getenv("CTP_FORK_TESTS") != NULL) g_fork = 1;
+    const char *env_junit = getenv("CTP_JUNIT");
+    if (env_junit != NULL && env_junit[0] != '\0') junit_path = env_junit;
 
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -301,6 +389,8 @@ int ctestprobe_main(int argc, char **argv) {
         else if (strcmp(arg, "--no-color") == 0) { g_color   = 0; }
         else if (strncmp(arg, "--filter=", 9) == 0) { g_filter = arg + 9; }
         else if (strcmp(arg, "--filter") == 0 && i + 1 < argc) { g_filter = argv[++i]; }
+        else if (strncmp(arg, "--junit=", 8) == 0) { junit_path = arg + 8; }
+        else if (strcmp(arg, "--junit") == 0 && i + 1 < argc) { junit_path = argv[++i]; }
         else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
             print_help(stdout, argv[0]);
             return 0;
@@ -321,6 +411,19 @@ int ctestprobe_main(int argc, char **argv) {
     }
 
     int failed = ctestprobe_run_all();
+
+    if (junit_path != NULL) {
+        FILE *fp = fopen(junit_path, "w");
+        if (fp == NULL) {
+            fprintf(stderr, "ctestprobe: cannot write JUnit XML to %s: %s\n",
+                    junit_path, strerror(errno));
+            /* Continue — the human-readable report is still useful. */
+        } else {
+            ctestprobe_junit_report(fp);
+            fclose(fp);
+        }
+    }
+
     if (use_tap) ctestprobe_tap_report();
     else         ctestprobe_console_report();
     return failed == 0 ? 0 : 1;

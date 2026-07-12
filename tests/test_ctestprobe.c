@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "ctestprobe.h"
@@ -188,6 +189,44 @@ int main(void) {
         printf("[MISMATCH] %-30s filter behavior\n", "filter");
     } else {
         printf("[OK] %-30s filter runs subset\n", "filter");
+    }
+
+    /* JUnit reporter: run a mix of pass/fail, emit to a tmpfile, read
+     * back, and check the essential structural pieces are present. Also
+     * verify XML metacharacters and control chars are escaped. */
+    ctestprobe_init();
+    ctestprobe_register("junit_pass",       hk_test);          /* PASS */
+    ctestprobe_register("junit_fail",       case_failing);     /* FAIL */
+    ctestprobe_register("junit <ampersand>", hk_test);         /* PASS, name needs escape */
+    (void)ctestprobe_run_all();
+
+    FILE *jfp = tmpfile();
+    int junit_ok = 0;
+    if (jfp != NULL) {
+        ctestprobe_junit_report(jfp);
+        long len = ftell(jfp);
+        rewind(jfp);
+        char *buf = (char *)malloc((size_t)len + 1);
+        if (buf != NULL) {
+            size_t r = fread(buf, 1, (size_t)len, jfp);
+            buf[r] = '\0';
+            junit_ok =
+                strstr(buf, "<?xml version=\"1.0\"")             != NULL &&
+                strstr(buf, "<testsuites tests=\"3\"")          != NULL &&
+                strstr(buf, "failures=\"1\"")                    != NULL &&
+                strstr(buf, "name=\"junit_pass\"")               != NULL &&
+                strstr(buf, "name=\"junit_fail\"")               != NULL &&
+                strstr(buf, "<failure message=\"assertion failed: 1 == 2\"") != NULL &&
+                strstr(buf, "name=\"junit &lt;ampersand&gt;\"")  != NULL;
+            free(buf);
+        }
+        fclose(jfp);
+    }
+    if (!junit_ok) {
+        mismatched++;
+        printf("[MISMATCH] %-30s JUnit XML output\n", "junit");
+    } else {
+        printf("[OK] %-30s JUnit XML output\n", "junit");
     }
 
     ctestprobe_free();

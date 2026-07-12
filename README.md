@@ -33,7 +33,7 @@ C has no reflection, so tests must be registered manually — but the resulting 
 - Substring filter to run one test (via API, CLI flag, or env var)
 - Fork isolation: a crashing test reports as FAIL instead of aborting the runner (POSIX)
 - Per-test timing populated via `clock_gettime(CLOCK_MONOTONIC)`
-- TAP version 14 output for CI parsers
+- TAP version 14 output and JUnit XML (Surefire dialect) for CI parsers
 - Colored console output on a tty; opt out via `--no-color` or `NO_COLOR=1`
 - Dynamic registry — no compile-time test cap
 
@@ -136,13 +136,14 @@ int main(int argc, char **argv) {
 The binary then accepts flags:
 
 ```bash
-./mytests                    # run all, console report
-./mytests --list             # list registered test names, exit 0
-./mytests --filter=addition  # run only tests whose name contains "addition"
-./mytests --tap              # emit TAP version 14 output instead
-./mytests --fork             # run each test in a forked process (crash-safe)
-./mytests --no-color         # disable ANSI color
-./mytests --help             # full usage
+./mytests                          # run all, console report
+./mytests --list                   # list registered test names, exit 0
+./mytests --filter=addition        # run only tests whose name contains "addition"
+./mytests --tap                    # emit TAP version 14 output instead
+./mytests --junit=results.xml      # also write JUnit XML for a CI parser
+./mytests --fork                   # run each test in a forked process (crash-safe)
+./mytests --no-color               # disable ANSI color
+./mytests --help                   # full usage
 ```
 
 ### Assertion macros
@@ -193,7 +194,10 @@ Configuration is via CLI flags and environment variables — there is no config 
 | Fork isolation   | `--fork`          | `CTP_FORK_TESTS=1`    | off              |
 | Colored console  | `--no-color` to disable | `NO_COLOR=1`    | auto (tty check) |
 | TAP output       | `--tap`           | —                     | console report   |
+| JUnit XML output | `--junit=PATH`    | `CTP_JUNIT=PATH`      | off              |
 | List only        | `--list`          | —                     | run              |
+
+`--junit=PATH` is additive: it writes the XML to `PATH` and still emits the console (or TAP) report to stdout, so GitHub Actions can render the test-summary widget from the XML while a human reads the console output.
 
 Compile-time behavior is controlled via the Makefile:
 

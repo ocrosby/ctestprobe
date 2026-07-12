@@ -2,6 +2,7 @@
 #define CTESTPROBE_H
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -45,11 +46,16 @@ typedef enum {
 typedef void (*ctp_test_func_t)(void);
 typedef void (*ctp_hook_t)(void *user_data);
 
+/* Cap on the formatted failure message we retain per test. Longer messages
+ * still print to stderr in full; only the JUnit-report snapshot is bounded. */
+#define CTP_FAILURE_MSG_MAX 512
+
 typedef struct ctp_test_s {
     const char       *name;
     ctp_test_func_t   test_func;
     double            execution_time;   /* seconds; populated after run */
     ctp_test_status_t status;
+    char              last_failure_msg[CTP_FAILURE_MSG_MAX];
 } ctp_test_t;
 
 /* -------- Registry lifecycle -------- */
@@ -96,6 +102,10 @@ int  ctestprobe_run_all(void);
 
 void ctestprobe_console_report(void);
 void ctestprobe_tap_report(void);
+/* Emit JUnit XML (Surefire dialect) to `fp`. Consumed by GitHub Actions,
+ * Jenkins, CircleCI, GitLab, Buildkite, and any test-result parser that
+ * understands the Surefire schema. */
+void ctestprobe_junit_report(FILE *fp);
 
 /* -------- CLI entry point --------
  *
