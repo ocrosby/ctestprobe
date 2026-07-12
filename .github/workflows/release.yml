@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Run semantic-release
+        uses: jedi-knights/go-semantic-release@44d82f5b1d93faa273eb9108f361280df9379dfd  # v0.10.2
+        with:
+          version: v0.10.2
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect new release
+        id: tag
+        run: |
+          git fetch --tags --force
+          TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -z "$TAG" ]; then
+            echo "No release created — nothing to package."
+          else
+            echo "Released: $TAG"
+          fi
+
+      - name: Build source tarball
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          make clean
+          TAR_NAME="ctestprobe-${TAG}.tar.gz"
+          tar -czvf "$TAR_NAME" \
+            --exclude='*docs*' \
+            --exclude='.git' \
+            --exclude='*.github*' \
+            --exclude='*examples*' \
+            --exclude='*tests*' \
+            --exclude='*homebrew*' \
+            --exclude='.gitignore' \
+            --exclude='LICENSE' \
+            *
+          echo "TAR_NAME=$TAR_NAME" >> "$GITHUB_ENV"
+
+      - name: Attach tarball to release
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ steps.tag.outputs.tag }}" "$TAR_NAME" --clobber
