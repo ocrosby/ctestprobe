@@ -8,17 +8,81 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: build (${{ matrix.os }}, ${{ matrix.cc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+          - os: ubuntu-latest
+            cc: clang
+          - os: macos-latest
+            cc: clang
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Install dependencies
+      - name: Build library, self-test, and example
+        run: make CC=${{ matrix.cc }}
+
+      - name: Run self-test
+        run: make test CC=${{ matrix.cc }}
+
+      - name: CMake configure + build + ctest
         run: |
-          sudo apt-get install -y gcc make
+          cmake -S . -B build-cmake -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          cmake --build build-cmake
+          ctest --test-dir build-cmake --output-on-failure
 
-      - name: Build
-        run: make
+      - name: Single-header amalgamation compiles standalone
+        shell: bash
+        run: |
+          make single-header
+          cat > /tmp/ctp_amalgam_test.c <<'EOF'
+          #define CTP_IMPLEMENTATION
+          #include "ctestprobe.h"
+          static void t_ok(void) { CTP_ASSERT_EQ_INT(1 + 1, 2); }
+          int main(int argc, char **argv) {
+              ctestprobe_init();
+              ctestprobe_register("ok", t_ok);
+              return ctestprobe_main(argc, argv);
+          }
+          EOF
+          ${{ matrix.cc }} -std=c11 -Wall -Wextra -Wpedantic -O2 \
+              -Isingle_include \
+              /tmp/ctp_amalgam_test.c -o /tmp/ctp_amalgam_test
+          /tmp/ctp_amalgam_test
 
-      - name: Self-test
-        run: make test
+  sanitize:
+    name: sanitize (${{ matrix.san }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [asan, ubsan]
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Run under ${{ matrix.san }}
+        run: make ${{ matrix.san }} CC=clang
+
+  static-analysis:
+    name: static analysis (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck on library sources
+        run: |
+          cppcheck --error-exitcode=1 \
+              --enable=warning,style,performance,portability \
+              --std=c11 \
+              --suppress=missingIncludeSystem \
+              -Iinclude \
+              src/ include/
