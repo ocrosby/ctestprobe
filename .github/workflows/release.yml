@@ -16,14 +16,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
 
-    env:
-      # Feed the owner/repo into semantic-release's config layer — the tool does
-      # not auto-detect these and its VerifyConditions check isn't wired into
-      # the release path, so an unset owner produces a POST to
-      # /repos///releases and a 404 at publish time.
-      SEMANTIC_RELEASE_GITHUB_OWNER: ${{ github.repository_owner }}
-      SEMANTIC_RELEASE_GITHUB_REPO: ${{ github.event.repository.name }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

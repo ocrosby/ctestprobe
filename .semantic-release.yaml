@@ -1,0 +1,7 @@
+release_mode: repo
+tag_format: "v{{.Version}}"
+
+github:
+  owner: ocrosby
+  repo: ctestprobe
+  create_release: true
