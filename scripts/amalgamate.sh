@@ -42,12 +42,23 @@ mkdir -p "$(dirname "$out")"
     echo " *     #include \"ctestprobe.h\""
     echo " */"
     echo
+    # Hoist feature test macros to the top of the amalgamated file so
+    # they take effect before any system header (via stddef.h / string.h
+    # in the declarations block) locks the glibc feature guards. Without
+    # this, CLOCK_MONOTONIC, fileno, strsignal, etc. become invisible on
+    # Linux. macOS is more forgiving so this masks locally.
+    echo "#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200809L"
+    echo "#  undef _POSIX_C_SOURCE"
+    echo "#  define _POSIX_C_SOURCE 200809L"
+    echo "#endif"
+    echo
     cat "$header"
     echo
     echo "#ifdef CTP_IMPLEMENTATION"
-    # Strip the impl's own include of the header — recursive at this
-    # point, and everything it needs is already in scope.
-    grep -v '^#include "ctestprobe.h"' "$impl"
+    # Strip the impl's own include of the header (recursive at this
+    # point) and its own _POSIX_C_SOURCE define (now hoisted above).
+    grep -v '^#include "ctestprobe.h"' "$impl" \
+        | grep -v '^#define _POSIX_C_SOURCE '
     echo "#endif /* CTP_IMPLEMENTATION */"
 } > "$out"
 
