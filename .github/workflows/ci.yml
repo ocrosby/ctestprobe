@@ -27,3 +27,6 @@ jobs:
 
       - name: Build
         run: make
+
+      - name: Self-test
+        run: make test
