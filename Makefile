@@ -28,7 +28,7 @@ SELF_TEST_BIN := $(BUILD)/test_ctestprobe
 EXAMPLE_SRC := examples/example1.c
 EXAMPLE_BIN := $(BUILD)/example1
 
-.PHONY: all lib test example clean install uninstall pkgconfig
+.PHONY: all lib test example clean install uninstall pkgconfig asan ubsan tsan
 
 all: $(LIB) $(SELF_TEST_BIN) $(EXAMPLE_BIN) $(PC)
 
@@ -49,10 +49,10 @@ $(OBJ): $(SRC) include/ctestprobe.h | $(BUILD)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 $(SELF_TEST_BIN): $(SELF_TEST_SRC) $(LIB) | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LIB)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LIB) $(LDFLAGS)
 
 $(EXAMPLE_BIN): $(EXAMPLE_SRC) $(LIB) | $(BUILD)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LIB)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< $(LIB) $(LDFLAGS)
 
 $(PC): ctestprobe.pc.in | $(BUILD)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' \
@@ -74,6 +74,29 @@ uninstall:
 	rm -f $(DESTDIR)$(LIBDIR)/libctestprobe.a
 	rm -f $(DESTDIR)$(INCLUDEDIR)/ctestprobe.h
 	rm -f $(DESTDIR)$(PKGCONFIGDIR)/ctestprobe.pc
+
+# Sanitizer targets: rebuild the whole tree with the relevant -fsanitize
+# flags and run the self-test under the sanitizer. Because the flags
+# affect codegen for both the library and its consumers, the tree must
+# be built entirely with them — hence the recursive `make` with an
+# overridden CFLAGS/LDFLAGS.
+asan:
+	$(MAKE) clean
+	$(MAKE) test \
+	    CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+	    LDFLAGS="-fsanitize=address,undefined"
+
+ubsan:
+	$(MAKE) clean
+	$(MAKE) test \
+	    CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=undefined -fno-omit-frame-pointer" \
+	    LDFLAGS="-fsanitize=undefined"
+
+tsan:
+	$(MAKE) clean
+	$(MAKE) test \
+	    CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -O1 -g -fsanitize=thread -fno-omit-frame-pointer" \
+	    LDFLAGS="-fsanitize=thread"
 
 clean:
 	rm -rf $(BUILD) ctestprobe.o libctestprobe.a
