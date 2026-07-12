@@ -212,11 +212,16 @@ int main(void) {
             buf[r] = '\0';
             junit_ok =
                 strstr(buf, "<?xml version=\"1.0\"")             != NULL &&
-                strstr(buf, "<testsuites tests=\"3\"")          != NULL &&
+                strstr(buf, "<testsuites tests=\"3\"")           != NULL &&
                 strstr(buf, "failures=\"1\"")                    != NULL &&
                 strstr(buf, "name=\"junit_pass\"")               != NULL &&
                 strstr(buf, "name=\"junit_fail\"")               != NULL &&
                 strstr(buf, "<failure message=\"assertion failed: 1 == 2\"") != NULL &&
+                /* Surefire-standard body: "file:line: message" so
+                 * downstream publishers extract file:line for clickable
+                 * annotations. */
+                strstr(buf, "test_ctestprobe.c:")                != NULL &&
+                strstr(buf, ": assertion failed: 1 == 2</failure>") != NULL &&
                 strstr(buf, "name=\"junit &lt;ampersand&gt;\"")  != NULL;
             free(buf);
         }

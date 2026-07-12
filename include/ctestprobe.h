@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 #define CTESTPROBE_VERSION_MAJOR 2
-#define CTESTPROBE_VERSION_MINOR 2
+#define CTESTPROBE_VERSION_MINOR 3
 #define CTESTPROBE_VERSION_PATCH 0
 
 /*
@@ -56,6 +56,12 @@ typedef struct ctp_test_s {
     double            execution_time;   /* seconds; populated after run */
     ctp_test_status_t status;
     char              last_failure_msg[CTP_FAILURE_MSG_MAX];
+    /* Source location of the last CTP_ASSERT_* / CTP_EXPECT_* that
+     * fired against this test. NULL / 0 when unset. Written to the
+     * JUnit XML failure body as the Surefire-standard "file:line: msg"
+     * prefix so downstream tools can render clickable annotations. */
+    const char       *last_failure_file;
+    int               last_failure_line;
 } ctp_test_t;
 
 /* -------- Registry lifecycle -------- */

@@ -81,10 +81,13 @@ void ctestprobe_register(const char *name, ctp_test_func_t test_func) {
         g_tests = r;
         g_cap = new_cap;
     }
-    g_tests[g_num].name           = name;
-    g_tests[g_num].test_func      = test_func;
-    g_tests[g_num].execution_time = 0.0;
-    g_tests[g_num].status         = CTP_NOT_RUN;
+    g_tests[g_num].name              = name;
+    g_tests[g_num].test_func         = test_func;
+    g_tests[g_num].execution_time    = 0.0;
+    g_tests[g_num].status            = CTP_NOT_RUN;
+    g_tests[g_num].last_failure_msg[0] = '\0';
+    g_tests[g_num].last_failure_file = NULL;
+    g_tests[g_num].last_failure_line = 0;
     g_num++;
 }
 
@@ -298,12 +301,26 @@ void ctestprobe_junit_report(FILE *fp) {
         xml_escape(fp, suite);
         fprintf(fp, "\" time=\"%.3f\"", t->execution_time);
         if (t->status == CTP_FAILED) {
+            const char *msg =
+                t->last_failure_msg[0] != '\0'
+                    ? t->last_failure_msg
+                    : "test failed";
             fputs(">\n      <failure message=\"", fp);
-            xml_escape(fp,
-                       t->last_failure_msg[0] != '\0'
-                           ? t->last_failure_msg
-                           : "test failed");
-            fputs("\" type=\"assertion\"/>\n    </testcase>\n", fp);
+            xml_escape(fp, msg);
+            fputs("\" type=\"assertion\"", fp);
+            if (t->last_failure_file != NULL) {
+                /* Surefire convention: "path/file.ext:LINE: message" at
+                 * the start of the body. Downstream consumers (JUnit
+                 * publishers, IDE integrations) extract file:line for
+                 * clickable navigation. */
+                fputc('>', fp);
+                xml_escape(fp, t->last_failure_file);
+                fprintf(fp, ":%d: ", t->last_failure_line);
+                xml_escape(fp, msg);
+                fputs("</failure>\n    </testcase>\n", fp);
+            } else {
+                fputs("/>\n    </testcase>\n", fp);
+            }
         } else if (t->status == CTP_SKIPPED) {
             fputs(">\n      <skipped/>\n    </testcase>\n", fp);
         } else {
@@ -331,7 +348,11 @@ static void snapshot_failure(const char *fmt, va_list ap) {
 }
 
 void ctestprobe_fail(const char *file, int line, const char *fmt, ...) {
-    if (g_current != NULL) g_current->status = CTP_FAILED;
+    if (g_current != NULL) {
+        g_current->status = CTP_FAILED;
+        g_current->last_failure_file = file;
+        g_current->last_failure_line = line;
+    }
     va_list ap;
     va_start(ap, fmt);
     snapshot_failure(fmt, ap);
@@ -347,7 +368,11 @@ void ctestprobe_fail(const char *file, int line, const char *fmt, ...) {
 }
 
 void ctestprobe_expect_fail(const char *file, int line, const char *fmt, ...) {
-    if (g_current != NULL) g_current->status = CTP_FAILED;
+    if (g_current != NULL) {
+        g_current->status = CTP_FAILED;
+        g_current->last_failure_file = file;
+        g_current->last_failure_line = line;
+    }
     va_list ap;
     va_start(ap, fmt);
     snapshot_failure(fmt, ap);
